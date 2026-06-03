@@ -1,18 +1,15 @@
-from typing import TypedDict, List, Annotated
-
+from langchain_classic.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.tools import tool
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
+from langchain_core.prompts import ChatPromptTemplate
 
-# --- 1.初始化模型 ---
+# 1. 初始化模型
 from init_client import init_llm
-llm = init_llm(0.1)
+llm = init_llm(temperature=0.1)
 
-# --- 2. 模拟数据库 ---
+# --- 2. 模拟数据 ---
 # 模拟一个包含商品信息的数据库
 product_database = {
-    "prod_001": {
+        "prod_001": {
         "name": "UltraBook Pro 14",
         "brand": "FutureTech",
         "price": 12999,
@@ -66,8 +63,7 @@ reviews_database = {
     ]
 }
 
-
-# --- 3. 工具定义 ---
+# --- 3.工具定义 ---
 @tool
 def search_product(query: str) -> str:
     """
@@ -78,146 +74,88 @@ def search_product(query: str) -> str:
     results = []
     for pid, product in product_database.items():
         if query.lower() in product["name"].lower() or query.lower() in product["brand"].lower():
-            results.append(f"ID: {pid}, 名称: {product['name']}")
+            results.append(f"ID: {pid}, 名称：{product['name']}")
+
     if not results:
         return f"未找到与 '{query}' 相关的商品。"
-    print(f"--- 工具结果: 找到 {len(results)} 个商品 ---")
-    return "\n".join(results)
 
+    print(f"--- 工具结果：找到{len(results)} 个商品---")
+    return "\n" . join(results)
 
 @tool
 def get_product_details(product_id: str) -> str:
-    """获取指定商品ID的详细信息，包括价格和规格。"""
+    """
+    获取指定商品ID的详细信息，包括价格和规格。
+    """
     print(f"\n--- 🛠️ 工具调用: get_product_details, 商品ID: '{product_id}' ---")
     product = product_database.get(product_id)
     if not product:
         return f"错误：未找到ID为 '{product_id}' 的商品。"
+
     details = (
-        f"名称: {product['name']}\n品牌: {product['brand']}\n价格: ¥{product['price']}\n规格:\n  - CPU: {product['specs']['cpu']}\n  - 内存: {product['specs']['ram']}\n  - 存储: {product['specs']['storage']}\n  - 屏幕: {product['specs']['display']}")
+        f"名称: {product['name']}\n"
+        f"品牌: {product['brand']}\n"
+        f"价格: ¥{product['price']}\n"
+        f"规格:\n"
+        f"  - CPU: {product['specs']['cpu']}\n"
+        f"  - 内存: {product['specs']['ram']}\n"
+        f"  - 存储: {product['specs']['storage']}\n"
+        f"  - 屏幕: {product['specs']['display']}"
+    )
     print(f"--- 工具结果: 已获取商品详情 ---")
     return details
 
-
 @tool
 def analyze_reviews(product_id: str) -> str:
-    """获取并总结指定商品ID的用户评论。"""
+    """
+    获取并总结指定商品ID的用户评论。
+    """
     print(f"\n--- 🛠️ 工具调用: analyze_reviews, 商品ID: '{product_id}' ---")
     reviews = reviews_database.get(product_id)
     if not reviews:
         return f"错误：未找到ID为 '{product_id}' 的商品评论。"
+
     summary = "用户评论总结:\n"
     positive_count = sum(1 for r in reviews if r['rating'] >= 4)
     negative_count = len(reviews) - positive_count
+
     summary += f"- 好评 ({positive_count}条): 用户普遍赞赏其性能和屏幕。\n"
     if negative_count > 0:
         summary += f"- 差评/中评 ({negative_count}条): 主要抱怨价格和重量。\n"
+
     summary += "\n代表性评论:\n" + "\n".join([f"- ({r['rating']}/5) {r['comment']}" for r in reviews])
+
     print(f"--- 工具结果: 已分析评论 ---")
     return summary
 
-
+# --- 4.Agent组装 ---
 tools = [search_product, get_product_details, analyze_reviews]
 
-# --- 4. LangGraph 工作流定义 ---
+# 创建一个专门的提示词模版，知道Agent如何扮演购物助理
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "你是一个专业的电子商务商品研究助理。你的任务是帮助用户比较商品，提供详细的信息和洞察。你可以使用提供的工具来搜索商品、获取详情和分析评论。请以清晰、有条理的方式呈现最终结果。"),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),      # Agent思考和行动的记录
+])
 
-# 定义 Agent 的状态。状态是在图的节点之间传递的信息。
-# 这里我们使用一个预定义的状态，它只包含一个 `messages` 键。
-from langgraph.graph.message import add_messages
+# 创建Agent执行器，这是实际运行Agent的引擎
+agent = create_tool_calling_agent(llm, tools, prompt)
 
+# 创建Agent执行器，这是实际运行Agent的引擎
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
-class State(TypedDict):
-    messages: Annotated[List[BaseMessage], add_messages]
-
-# 定义决定下一步路由的函数
-def should_continue(state: State) -> str:
-    """
-    决定下一步是调用工具还是结束。
-    """
-    messages = state['messages']
-    last_message = messages[-1]
-    # 如果 LLM 决定调用工具，我们路由到 "tools" 节点
-    if last_message.tool_calls:
-        return "tools"
-    # 否则，我们结束
-    return END
-
-
-# 定义调用模型的节点
-def call_model(state: State):
-    """
-    调用模型并获取响应。
-    """
-    messages = state['messages']
-    # 将工具绑定到模型上
-    model_with_tools = llm.bind_tools(tools)
-    response = model_with_tools.invoke(messages)
-    # 返回一个包含新消息列表的状态
-    return {"messages": [response]}
-
-
-# --- 5. 构建图 ---
-# 从我们的状态定义创建一个 StateGraph
-workflow = StateGraph(State)
-
-# 添加节点
-workflow.add_node("agent", call_model)
-workflow.add_node("tools", ToolNode(tools))
-
-# 设置入口点
-workflow.set_entry_point("agent")
-
-# 添加条件边
-workflow.add_conditional_edges(
-    "agent",
-    should_continue,
-    ["tools", END]
-)
-
-# 添加从 tools 回到 agent 的普通边
-workflow.add_edge("tools", "agent")
-
-# 编译图
-app = workflow.compile()
-
-# 打印图的结构（可选，非常直观！）
-try:
-    print("--- 图结构 ---")
-    app.get_graph().print_ascii()
-    print("\n" + "=" * 20 + "\n")
-except Exception as e:
-    print(f"无法打印图结构: {e}")
-
-# --- 6. 执行与演示 ---
+# --- 5.执行与演示 ---
 def product_research_agent():
     query = "我想比较一下 FutureTech 和 Infinity 这两个品牌的旗舰笔记本，帮我做个决定。"
-    print(f"用户问题: {query}\n")
+    print(f"用户问题：{query}\n")
 
-    # 初始状态，包含用户的第一个消息
-    initial_state = {"messages": [HumanMessage(content=query)]}
+    try:
+        response = agent_executor.invoke(input={"input":query})
+        print("\n --- 最终助理报告 ---")
+        print(response["output"])
+    except Exception as e:
+        print(f"Agent执行期间发生错误：{e}")
 
-    # 使用 stream 来实时查看每一步的输出
-    for event in app.stream(initial_state):
-        for key, value in event.items():
-            print(f"--- 节点 '{key}' 的输出 ---")
-            # pprint(value) # 可以打印完整的状态，但通常我们只关心最后一条消息
-            if 'messages' in value and value['messages']:
-                last_message = value['messages'][-1]
-                if isinstance(last_message, AIMessage) and last_message.content:
-                    print(f"AI 思考/回答: {last_message.content}")
-                elif isinstance(last_message, AIMessage) and last_message.tool_calls:
-                    print(f"AI 决定调用工具: {last_message.tool_calls}")
-            print("-" * 20)
-
-    # 获取最终状态
-    final_state = app.invoke(initial_state)
-    final_message = final_state['messages'][-1]
-    print("\n--- ✅ 最终助理报告 ---")
-    print(final_message.content)
-
-# 运行测试
 if __name__ == "__main__":
     product_research_agent()
-
-
-
 
