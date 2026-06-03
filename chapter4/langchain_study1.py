@@ -1,7 +1,6 @@
+from turtle import back
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-
-
 
 # 初始化模型
 from init_client import init_llm
@@ -14,7 +13,7 @@ def generate_data_analysis_report():
     """
     # 定义核心任务
     task_prompt = """
-    你是一名数据分析师，需要基于以下销售数据生成一份简洁而全面的分析报告：
+        你是一名数据分析师，需要基于以下销售数据生成一份简洁而全面的分析报告：
 
     数据：
     - 产品A：Q1销售额120万，Q2销售额150万，Q3销售额180万，Q4销售额210万
@@ -28,16 +27,16 @@ def generate_data_analysis_report():
     4. 关键洞察和建议
     """
 
-    # 生产者提示模板
+    # 生产者提示模版
     producer_template = """
     {task}
 
     {feedback}
 
-    请根据以上要求生成数据分析报告：
+    请根据以上要求生成数据分析报告
     """
 
-    # 评审者提示模板
+    # 评审者提示模版
     reviewer_template = """
     你是一名资深数据分析专家，负责评估数据分析报告的质量。
 
@@ -63,7 +62,7 @@ def generate_data_analysis_report():
     producer_chain = producer_prompt | llm | StrOutputParser()
 
     reviewer_prompt = PromptTemplate(template=reviewer_template, input_variables=["task", "report"])
-    reviewer_chain = reviewer_prompt | llm | StrOutputParser()
+    reviewer_chain = reviewer_prompt | llm |StrOutputParser()
 
     # 初始化变量
     current_report = ""
@@ -72,32 +71,48 @@ def generate_data_analysis_report():
 
     # 反思循环
     for i in range(max_iterations):
-        print(f"\n{'=' * 30} 反思循环：迭代 {i + 1} {'=' * 30}")
+        print(f"\n{'=' * 30} 反思循环：迭代{i+1} {'=' * 30}")
 
         # 生产者生成/优化报告
-        print("\n>>> 阶段1：生成/优化报告...")
-        current_report = producer_chain.invoke({"task": task_prompt, "feedback": feedback})
-
-        print(f"\n--- 生成的报告 (v{i + 1}) ---\n{current_report}")
+        current_report = producer_chain.invoke(input={
+            "task": task_prompt,
+            "feedback": feedback
+        })
+        print(f"\n---生成的报告(v{i+1}) --- \n{current_report}")
 
         # 评审者评估报告
         print("\n>>> 阶段2：评估报告质量...")
-        review = reviewer_chain.invoke({"task": task_prompt, "report": current_report})
+        review = reviewer_chain.invoke(input={
+            "task": task_prompt,
+            "report": current_report
+        })
 
         # 检查停止条件
         if "REPORT_IS_PERFECT" in review:
-            print("\n--- 评估结果 ---\n报告质量满意，无需进一步改进。")
+            print("\n--- 评估结果 ---\n 报告质量满意，无需进一步改进")
             break
-
-        print(f"\n--- 评估结果 ---\n{review}")
+        print(f"\n --- 评估结果 --- \n {review}")
 
         # 更新反馈用于下一轮迭代
         feedback = f"请根据以下评估结果优化报告：\n{review}"
 
-    print(f"\n{'=' * 35} 最终结果 {'=' * 35}")
-    print("\n经过反思过程优化的最终数据分析报告：\n")
+    print(f"\n{'=' * 30} 最终报告 {'=' * 30}")
+    print("\nn经过反思过程优化的最终数据分析报告：\n")
     print(current_report)
-
 
 if __name__ == "__main__":
     generate_data_analysis_report()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
