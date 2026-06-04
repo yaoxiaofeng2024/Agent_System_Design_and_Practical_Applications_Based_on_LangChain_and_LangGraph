@@ -10,7 +10,7 @@ from langchain_core.prompts import PromptTemplate
 # 从本地模块初始化大模型客户端，参数 0.7 为温度值（越高输出越随机/有创意，越低越确定/保守）
 from init_client import init_llm
 
-llm = init_llm(0.7)
+llm = init_llm(temperature=0.7)
 
 # ============================================================
 # 自定义输出解析器：将大模型返回的文本中提取 JSON 并解析为字典
@@ -21,7 +21,7 @@ class TravelPlanParser(BaseOutputParser):
         try:
             # 找到第一个 '{' 和最后一个 '}' 的位置，截取中间的 JSON 字符串
             start_idx = text.find('{')
-            end_idx = text.rfind('}') + 1
+            end_idx = text.rfind('}')+1
             if start_idx != -1 and end_idx != 0:
                 json_str = text[start_idx:end_idx]
                 # 将 JSON 字符串解析为 Python 字典
@@ -31,7 +31,7 @@ class TravelPlanParser(BaseOutputParser):
                 return {"plan": text}
         except Exception as e:
             # JSON 解析失败时的兜底处理，避免程序崩溃
-            print(f"解析错误: {e}")
+            print(f"解析错误：{e}")
             return {"plan": text}
 
 # ============================================================
@@ -44,7 +44,7 @@ planning_template = """
 
 客户需求：
 - 目的地：{destination}
-- 旅行时长：{duration}
+- 履行时长：{duration}
 - 预算：{budget}
 - 兴趣偏好：{interests}
 - 出行时间：{travel_date}
@@ -114,8 +114,9 @@ adjustment_prompt = PromptTemplate(
 planning_chain = planning_prompt | llm | TravelPlanParser()
 adjustment_chain = adjustment_prompt | llm | TravelPlanParser()
 
+
 # ConversationBufferMemory：对话缓冲记忆，保存所有历史对话记录
-# 用于让 Agent "记住"之前的交互，实现多轮对话的上下文连贯
+# 用于让 Agent “记住”之前的交互，实现多轮对话的上下文连贯
 memory = ConversationBufferMemory()
 
 
@@ -125,19 +126,19 @@ memory = ConversationBufferMemory()
 # ============================================================
 class TravelPlannerAgent:
     def __init__(self):
-        self.current_plan = None  # 当前持有的旅行计划（字典格式）
-        self.planning_chain = planning_chain    # 创建计划的链
-        self.adjustment_chain = adjustment_chain # 调整计划的链
-        self.memory = memory  # 对话记忆组件
+        self.current_plan = None                                                         # 当前持有的旅行计划（字典格式）
+        self.planning_chain = planning_chain        # 创建计划的链
+        self.adjustment_chain = adjustment_chain    # 调整计划的链  
+        self.memory = memory                                         # 对话记忆组件
 
     def create_plan(self, destination, duration, budget, interests, travel_date):
-        """创建初始旅行计划：将参数填入模板，调用大模型，返回解析后的计划"""
-        response: Any = self.planning_chain.invoke({
-            "destination": destination,    # 目的地
-            "duration": duration,          # 旅行时长
-            "budget": budget,              # 预算
-            "interests": interests,        # 兴趣偏好
-            "travel_date": travel_date     # 出行时间
+        """ 创建初始旅行计划：将参数填入模板，调用大模型，返回解析后的计划 """
+        response: Any = self.planning_chain.invoke(input={
+            "destination": destination,         # 目的地
+            "duration": duration,               # 旅行时长
+            "budget": budget,                   # 预算
+            "interests": interests,             # 兴趣偏好
+            "travel_date": travel_date          # 出行时间
         })
 
         # 保存本次生成的计划，后续调整时需要基于此计划
@@ -145,8 +146,8 @@ class TravelPlannerAgent:
 
         # 将本轮对话记录存入记忆（输入 + 输出）
         self.memory.save_context(
-            {"input": f"创建旅行计划到{destination}，时长{duration}天，预算{budget}"},
-            {"output": str(response)}
+            inputs={"input": f"创建旅行计划到{destination}，时长{duration}天，预算：{budget}"},
+            outputs={"output": str(response)}
         )
 
         return response
@@ -157,25 +158,25 @@ class TravelPlannerAgent:
             return "没有可调整的计划，请先创建计划。"
 
         # 将当前计划和调整需求一起发给大模型，生成调整后的计划
-        response = self.adjustment_chain.invoke({
-            "original_plan": str(self.current_plan),  # 原始计划
-            "adjustment_request": adjustment_request   # 用户新的调整需求
+        response = self.adjustment_chain.invoke(input={
+            "original_plan": str(self.current_plan),        # 原始计划
+            "adjustment_request": adjustment_request        # 用户新的调整需求
         })
 
-        # 用调整后的计划覆盖当前计划
+        # 用调整后的计划，覆盖当前计划
         self.current_plan = response
+
         # 同样将本轮交互存入记忆
         self.memory.save_context(
-            {"input": f"调整计划：{adjustment_request}"},
-            {"output": str(response)}
+            inputs={"input": f"调整计划：{adjustment_request}"},
+            outputs={"output":str(response)}
         )
 
         return response
-
+    
     def get_current_plan(self):
-        """获取当前持有的旅行计划"""
+        """ 获取当前持有的旅行计划 """
         return self.current_plan
-
 
 # ============================================================
 # 运行示例：演示 Agent 的"创建计划 → 调整计划"完整流程
@@ -184,23 +185,23 @@ if __name__ == "__main__":
     # 初始化旅行规划 Agent
     agent = TravelPlannerAgent()
 
-    # ---- 第一步：创建初始计划 ----
+    # --- 第一步：创建初始计划 ---
     print("## 创建初始旅行计划 ##")
     initial_plan = agent.create_plan(
-        destination="中国北京",        # 目的地
-        duration="5天",               # 旅行时长
-        budget="10000元",             # 预算
-        interests="传统文化、美食、古迹", # 兴趣偏好
-        travel_date="2026年1月"       # 出行时间
+        destination="中国北京",                 # 目的地
+        duration="5天",                         # 旅行时长
+        budget="10000元",                      # 预算
+        interests="传统文化、美食、古迹",        # 兴趣偏好
+        travel_date="2026年7月"                # 出行时间
     )
 
-    print("初始计划:")
+    print("初始计划：")
     # json.dumps 将字典格式化为缩进美观的 JSON 字符串，ensure_ascii=False 保留中文
-    print(json.dumps(initial_plan, indent=2, ensure_ascii=False))
+    print(json.dumps(obj=initial_plan, indent=2, ensure_ascii=False))
 
     # ---- 第二步：基于新需求调整计划 ----
     print("\n## 调整旅行计划 ##")
     adjusted_plan = agent.adjust_plan("预算减少到8000元，并增加一天行程")
 
-    print("调整后的计划:")
-    print(json.dumps(adjusted_plan, indent=2, ensure_ascii=False))
+    print("调整后的计划：")
+    print(json.dumps(obj=adjusted_plan, indent=2, ensure_ascii=False))
