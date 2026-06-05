@@ -204,7 +204,6 @@ def create_conversation_graph():
 
     return app
 
-
 # 主交互循环
 def chat_loop():
     """主交互循环"""
@@ -247,7 +246,6 @@ def chat_loop():
 
         # 打印AI响应
         print(f"\n助理: {result['response']}\n")
-
 
 if __name__ == "__main__":
     chat_loop()

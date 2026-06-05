@@ -195,6 +195,7 @@ def chat_loop():
 
     if os.path.exists(USER_PROFILE_FILE):
         os.remove(USER_PROFILE_FILE)
+
     if os.path.exists(CHAT_HISTORY_FILE):
         os.remove(CHAT_HISTORY_FILE)
 
